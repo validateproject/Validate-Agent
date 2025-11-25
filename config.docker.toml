@@ -1,0 +1,12 @@
+redis_url = "redis://redis:6379"
+
+[[validators]]
+id = "validator-local-1"
+host = "validator1.local"
+prometheus_url = "http://validator1.local:9100/metrics"
+
+[[validators]]
+id = "validator-local-2"
+host = "validator2.local"
+prometheus_url = "http://validator2.local:9100/metrics"
+

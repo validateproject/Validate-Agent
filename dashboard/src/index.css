@@ -1,0 +1,147 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  background-color: #0f172a;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.page {
+  padding: 2.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.header h1 {
+  margin: 0.1rem 0;
+  font-size: 2.5rem;
+}
+
+.subdued {
+  color: #cbd5f5;
+  margin: 0.25rem 0;
+}
+
+.stat-card {
+  padding: 1rem 1.25rem;
+  background: #1e293b;
+  border-radius: 12px;
+  min-width: 160px;
+  text-align: right;
+}
+
+.stat-label {
+  margin: 0;
+  color: #94a3b8;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+.stat-value {
+  margin: 0;
+  font-size: 2.5rem;
+  font-weight: 600;
+}
+
+.banner {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.banner.info {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.banner.warning {
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.table-wrapper {
+  background: #1e293b;
+  border-radius: 12px;
+  overflow-x: auto;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 0.85rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+th {
+  background: rgba(15, 23, 42, 0.8);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+}
+
+tr:last-of-type td {
+  border-bottom: none;
+}
+
+.badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge.success {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+.badge.warning {
+  background: rgba(251, 191, 36, 0.2);
+  color: #facc15;
+}
+
+.badge.danger {
+  background: rgba(248, 113, 113, 0.2);
+  color: #f87171;
+}
+
+.badge.muted {
+  background: rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+}
+
