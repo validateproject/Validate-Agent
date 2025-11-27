@@ -1,16 +1,23 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::{extract::State, routing::get, Json, Router};
-use common::{risk_score, Action, Config, IssueKind, Playbook, ValidatorId, ValidatorMetrics};
-use redis::AsyncCommands;
+use common::{
+    risk_score, Action, Config, IssueKind, Playbook, ValidatorConfig, ValidatorId, ValidatorMetrics,
+};
+use executor::proto::executor_client::ExecutorClient;
+use executor::proto::{ActionEnvelope, MetricsWatchRequest};
 use serde::Serialize;
+use std::collections::HashMap;
+use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio::time::interval;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info};
 
-const ACTION_QUEUE: &str = "actions:queue";
+const ACTION_POLL_INTERVAL_SECS: u64 = 10;
 const MAX_RAM_GB: f64 = 128.0;
+const DEFAULT_SERVER_ADDR: &str = "http://127.0.0.1:50051";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -20,21 +27,33 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let cfg = common::load_config()?;
-    let client = redis::Client::open(cfg.redis_url.clone())?;
-    let agent_conn = redis::aio::ConnectionManager::new(client.clone()).await?;
-    let http_conn = redis::aio::ConnectionManager::new(client).await?;
+    let cfg = Arc::new(common::load_config()?);
+    let server_addr =
+        env::var("EXECUTOR_SERVER_ADDR").unwrap_or_else(|_| DEFAULT_SERVER_ADDR.to_string());
+    let channel = tonic::transport::Endpoint::from_shared(server_addr.clone())?
+        .connect()
+        .await
+        .context("failed to connect to executor daemon")?;
+    let metrics_client = ExecutorClient::new(channel.clone());
+    let action_client = ExecutorClient::new(channel);
 
-    let agent_cfg = cfg.clone();
+    let metrics_cache = MetricsCache::default();
+
+    let metrics_task_cache = metrics_cache.clone();
     tokio::spawn(async move {
-        if let Err(err) = run_agent(agent_cfg, agent_conn).await {
+        subscribe_metrics_loop(metrics_client, metrics_task_cache).await;
+    });
+    let agent_cfg = cfg.clone();
+    let agent_metrics_cache = metrics_cache.clone();
+    tokio::spawn(async move {
+        if let Err(err) = run_agent_loop(action_client, agent_cfg, agent_metrics_cache).await {
             error!(?err, "agent loop terminated");
         }
     });
 
     let app_state = AppState {
-        redis: Arc::new(Mutex::new(http_conn)),
-        config: Arc::new(cfg),
+        config: cfg.clone(),
+        metrics: metrics_cache,
     };
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -55,43 +74,64 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn run_agent(cfg: Config, mut redis: redis::aio::ConnectionManager) -> Result<()> {
-    let mut ticker = tokio::time::interval(Duration::from_secs(10));
-    info!("agent loop started for {} validators", cfg.validators.len());
+async fn subscribe_metrics_loop(
+    mut client: ExecutorClient<tonic::transport::Channel>,
+    cache: MetricsCache,
+) {
+    let request = tonic::Request::new(MetricsWatchRequest {
+        validator_ids: vec![],
+        include_snapshot: true,
+    });
+    match client.subscribe_metrics(request).await {
+        Ok(mut stream) => {
+            let mut inner = stream.into_inner();
+            while let Ok(Some(update)) = inner.message().await {
+                match serde_json::from_str::<ValidatorMetrics>(&update.metrics_json) {
+                    Ok(metrics) => {
+                        cache.insert(update.validator_id.clone(), metrics).await;
+                    }
+                    Err(err) => {
+                        error!(validator = update.validator_id, ?err, "invalid metrics payload");
+                    }
+                }
+            }
+        }
+        Err(err) => {
+            error!(?err, "metrics subscription failed");
+        }
+    }
+}
+
+async fn run_agent_loop(
+    mut client: ExecutorClient<tonic::transport::Channel>,
+    config: Arc<Config>,
+    metrics: MetricsCache,
+) -> Result<()> {
+    let mut ticker = interval(Duration::from_secs(ACTION_POLL_INTERVAL_SECS));
+    info!("agent loop started for {} validators", config.validators.len());
     loop {
         ticker.tick().await;
-        for v in &cfg.validators {
-            let key = format!("validator:metrics:{}", v.id.0);
-            let payload: Option<String> = match redis.get(&key).await {
-                Ok(val) => val,
-                Err(err) => {
-                    error!(validator = v.id.0, "failed to fetch metrics: {err:?}");
-                    continue;
-                }
-            };
-            let Some(payload) = payload else {
-                info!(validator = v.id.0, "no metrics yet");
+        let snapshot = metrics.snapshot().await;
+        for validator in &config.validators {
+            let Some(metrics) = snapshot.get(&validator.id.0) else {
                 continue;
             };
-            let metrics: ValidatorMetrics = match serde_json::from_str(&payload) {
-                Ok(m) => m,
-                Err(err) => {
-                    error!(validator = v.id.0, "invalid metrics payload: {err:?}");
-                    continue;
-                }
-            };
-            if let Some(issue) = detect_issue(&metrics) {
-                let playbook = choose_playbook(issue, &v.id);
+            if let Some(issue) = detect_issue(metrics) {
+                let playbook = choose_playbook(issue, &validator.id);
                 info!(
-                    validator = v.id.0,
+                    validator = validator.id.0,
                     issue = ?issue,
                     playbook = %playbook.id,
-                    "issue detected, enqueuing actions"
+                    "issue detected, dispatching actions via executor"
                 );
                 for action in playbook.steps {
                     let action_json = serde_json::to_string(&action)?;
-                    if let Err(err) = redis.rpush::<_, _, i64>(ACTION_QUEUE, action_json).await {
-                        error!(validator = v.id.0, "failed to enqueue action: {err:?}");
+                    let request = tonic::Request::new(ActionEnvelope {
+                        validator_id: validator.id.0.clone(),
+                        action_json,
+                    });
+                    if let Err(err) = client.submit_action(request).await {
+                        error!(validator = validator.id.0, ?err, "failed to submit action");
                     }
                 }
             }
@@ -103,47 +143,34 @@ async fn health() -> &'static str {
     "ok"
 }
 
-async fn pending_actions(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let mut conn = state.redis.lock().await;
-    let pending = pending_count(&mut conn).await;
-    Json(serde_json::json!({ "pending": pending }))
+async fn pending_actions() -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "pending": 0 }))
 }
 
-async fn actions_summary(State(state): State<AppState>) -> Json<ActionsResponse> {
-    let mut conn = state.redis.lock().await;
-    let pending = pending_count(&mut conn).await;
-    Json(ActionsResponse { pending })
+async fn actions_summary() -> Json<ActionsResponse> {
+    Json(ActionsResponse { pending: 0 })
 }
 
 async fn list_validators(State(state): State<AppState>) -> Json<ValidatorsResponse> {
-    let mut conn = state.redis.lock().await;
+    let snapshot = state.metrics.snapshot().await;
     let mut validators = Vec::with_capacity(state.config.validators.len());
 
     for cfg in &state.config.validators {
-        let key = format!("validator:metrics:{}", cfg.id.0);
-        let payload: Option<String> = conn.get(&key).await.unwrap_or(None);
-        let (metrics, status, risk) = match payload {
-            Some(json) => match serde_json::from_str::<ValidatorMetrics>(&json) {
-                Ok(metrics) => {
-                    let status = detect_issue(&metrics)
-                        .map(|i| format!("{:?}", i))
-                        .unwrap_or_else(|| "ok".into());
-                    let risk = Some(risk_score(&metrics));
-                    (Some(metrics), status, risk)
-                }
-                Err(err) => {
-                    error!(validator = cfg.id.0, ?err, "failed to decode metrics");
-                    (None, "invalid_metrics".into(), None)
-                }
-            },
-            None => (None, "no_data".into(), None),
+        let metrics_opt = snapshot.get(&cfg.id.0).cloned();
+        let (status, risk) = match metrics_opt.as_ref() {
+            Some(metrics) => (
+                detect_issue(metrics)
+                    .map(|i| format!("{:?}", i))
+                    .unwrap_or_else(|| "ok".into()),
+                Some(risk_score(metrics)),
+            ),
+            None => ("no_data".into(), None),
         };
-
         validators.push(ValidatorSummary {
             id: cfg.id.0.clone(),
             host: cfg.host.clone(),
             prometheus_url: cfg.prometheus_url.clone(),
-            metrics,
+            metrics: metrics_opt,
             status,
             risk_score: risk,
         });
@@ -154,8 +181,23 @@ async fn list_validators(State(state): State<AppState>) -> Json<ValidatorsRespon
 
 #[derive(Clone)]
 struct AppState {
-    redis: Arc<Mutex<redis::aio::ConnectionManager>>,
     config: Arc<Config>,
+    metrics: MetricsCache,
+}
+
+#[derive(Clone, Default)]
+struct MetricsCache {
+    inner: Arc<Mutex<HashMap<String, ValidatorMetrics>>>,
+}
+
+impl MetricsCache {
+    async fn insert(&self, id: String, metrics: ValidatorMetrics) {
+        self.inner.lock().await.insert(id, metrics);
+    }
+
+    async fn snapshot(&self) -> HashMap<String, ValidatorMetrics> {
+        self.inner.lock().await.clone()
+    }
 }
 
 #[derive(Serialize)]
@@ -176,10 +218,6 @@ struct ValidatorSummary {
     metrics: Option<ValidatorMetrics>,
     status: String,
     risk_score: Option<f64>,
-}
-
-async fn pending_count(conn: &mut redis::aio::ConnectionManager) -> i64 {
-    conn.llen(ACTION_QUEUE).await.unwrap_or(0)
 }
 
 /// Detect issues using simple rule-based logic.

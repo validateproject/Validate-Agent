@@ -6,14 +6,14 @@ Validate Agent is a automates validator SRE. It continuously monitors validator 
 
 | Component | Path | Description |
 | --- | --- | --- |
-| Metrics Collector | `crates/metrics_collector` | Periodically writes synthetic Prometheus style metrics about each validator into Redis. |
-| Agent | `crates/agent` | Reads metrics, detects issues, enqueues recovery actions, and exposes a small HTTP API + dashboard data feed. |
-| Executor | `crates/executor` | Act on actions from Redis and run the associated remediation steps. |
+| Metrics Collector | `crates/metrics_collector` | Subscribes to the daemon’s metrics stream and mirrors the latest samples into Redis for the dashboard. |
+| Agent | `crates/agent` | Subscribes to validator metrics via gRPC, detects issues, sends actions through the daemon, and exposes the HTTP API for the dashboard. |
+| Executor | `crates/executor` | gRPC control plane (`executor_daemon`), validator-side client (`validator_client`), and shared proto definitions. |
 | Shared types | `crates/common` | Validator config, metrics schema, action definitions, and helper utilities. |
 | Dashboard | `dashboard/` | A simple dashboard that consumes the agent API and visualizes validators, risk scores, and pending actions. |
-| Docker mocks | `docker/validator-mock` | Python service that serves `/metrics` endpoints for two fake validators. |
+| Docker mocks | `docker/validator-mock` | Python service that exposes `/metrics` plus `/admin/*` control hooks the executor calls. |
 
-Redis acts as the central datastore and queue: metrics are written to `validator:metrics:<id>`, pending actions live in `actions:queue`, and historical results are pushed to `actions:history`.
+Redis now only stores the latest validator metrics (`validator:metrics:<id>`), mirrored there by the metrics collector for the dashboard; all action dispatching flows through the gRPC control plane.
 
 ## Prerequisites
 
@@ -29,6 +29,7 @@ Bring up Redis, the Rust services, validator, and the dashboard via Docker:
 cp config.docker.toml config.toml        # optional customization
 docker compose up --build \
   agent metrics_collector executor \
+  validator_client1 validator_client2 \
   validator1 validator2 dashboard
 ```
 
@@ -42,6 +43,16 @@ The dashboard refreshes every few seconds by calling:
 
 - `GET /api/validators` list of configured validators, latest metrics (if available), risk score, and derived status (`ok`, rule name, `no_data`, or `invalid_metrics`).
 - `GET /api/actions` pending queue length
+
+### gRPC executor control plane
+
+- `executor_daemon` runs next to the control-plane services and hosts a gRPC server (default `0.0.0.0:50051`). It authenticates validator clients, streams actions to them, accepts their results, ingests their metrics, and fans those metrics out to the agent + metrics collector.
+- `validator_client` runs on every validator host. It authenticates with its shared secret, receives actions, executes them locally, scrapes local Prometheus-style metrics, and continuously publishes those metrics back to the daemon.
+- `agent` and `metrics_collector` never scrape validators or touch Redis directly. They each open a gRPC connection to the daemon: the agent subscribes to live metrics and pushes new remediation actions, while the metrics collector subscribes to the same stream and mirrors it into Redis for the dashboard.
+- Environment variables:
+  - `EXECUTOR_LISTEN_ADDR` (server) overrides the listen address (`0.0.0.0:50051` default).
+  - `EXECUTOR_SERVER_ADDR`, `VALIDATOR_ID`, `VALIDATOR_AUTH_TOKEN`, `VALIDATOR_METRICS_URL` (validator client) control how a validator connects and where it scrapes metrics.
+  - `EXECUTOR_SERVER_ADDR` (agent + metrics_collector) points them at the daemon.
 
 ### Dashboard preview
 
@@ -58,9 +69,15 @@ The dashboard refreshes every few seconds by calling:
 3. Copy `config.example.toml` → `config.toml` and update `redis_url` + validator hosts to match your environment.
 4. Run each binary:
    ```bash
-   cargo run -p metrics_collector
-   cargo run -p agent
-   cargo run -p executor --bin executor_daemon
+   EXECUTOR_SERVER_ADDR=http://localhost:50051 cargo run -p metrics_collector
+   EXECUTOR_SERVER_ADDR=http://localhost:50051 cargo run -p agent
+   cargo run -p executor --bin executor_daemon   # control-plane gRPC server
+   # on every validator host
+   EXECUTOR_SERVER_ADDR=http://<control-plane>:50051 \
+   VALIDATOR_ID=validator-local-1 \
+   VALIDATOR_AUTH_TOKEN=validator-local-1-secret \
+   VALIDATOR_METRICS_URL=http://127.0.0.1:9100/metrics \
+     cargo run -p executor --bin validator_client
    ```
 5. For the dashboard:
    ```bash

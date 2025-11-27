@@ -4,8 +4,10 @@ redis_url = "redis://127.0.0.1:6379"
 id = "validator-1"
 host = "validator1.example.com"
 prometheus_url = "http://validator1.example.com:9100/metrics"
+auth_token = "validator-1-secret"
 
 [[validators]]
 id = "validator-2"
 host = "validator2.example.com"
 prometheus_url = "http://validator2.example.com:9100/metrics"
+auth_token = "validator-2-secret"

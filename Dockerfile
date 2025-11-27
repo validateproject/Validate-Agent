@@ -30,6 +30,7 @@ WORKDIR ${APP_HOME}
 COPY --from=builder /app/target/release/agent /usr/local/bin/agent
 COPY --from=builder /app/target/release/metrics_collector /usr/local/bin/metrics_collector
 COPY --from=builder /app/target/release/executor_daemon /usr/local/bin/executor_daemon
+COPY --from=builder /app/target/release/validator_client /usr/local/bin/validator_client
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN chmod +x /usr/local/bin/entrypoint.sh \

@@ -24,6 +24,7 @@ services:
       - ./config.docker.toml:/app/config.toml:ro
     environment:
       - RUST_LOG=info
+      - EXECUTOR_SERVER_ADDR=http://executor:50051
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     command: ["/usr/local/bin/agent"]
     ports:
@@ -44,6 +45,7 @@ services:
       - ./config.docker.toml:/app/config.toml:ro
     environment:
       - RUST_LOG=info
+      - EXECUTOR_SERVER_ADDR=http://executor:50051
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     command: ["/usr/local/bin/metrics_collector"]
 
@@ -64,6 +66,42 @@ services:
       - RUST_LOG=info
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     command: ["/usr/local/bin/executor_daemon"]
+
+  validator_client1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      executor:
+        condition: service_started
+      validator1:
+        condition: service_started
+    environment:
+      - RUST_LOG=info
+      - EXECUTOR_SERVER_ADDR=http://executor:50051
+      - VALIDATOR_ID=validator-local-1
+      - VALIDATOR_AUTH_TOKEN=validator-local-1-secret
+      - VALIDATOR_METRICS_URL=http://validator1.local:9100/metrics
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    command: ["/usr/local/bin/validator_client"]
+
+  validator_client2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      executor:
+        condition: service_started
+      validator2:
+        condition: service_started
+    environment:
+      - RUST_LOG=info
+      - EXECUTOR_SERVER_ADDR=http://executor:50051
+      - VALIDATOR_ID=validator-local-2
+      - VALIDATOR_AUTH_TOKEN=validator-local-2-secret
+      - VALIDATOR_METRICS_URL=http://validator2.local:9100/metrics
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    command: ["/usr/local/bin/validator_client"]
 
   dashboard:
     image: node:20-alpine

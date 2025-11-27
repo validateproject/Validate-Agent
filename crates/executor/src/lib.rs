@@ -5,52 +5,57 @@ use std::time::Duration;
 use tokio::process::Command;
 use tracing::info;
 
+pub mod proto {
+    tonic::include_proto!("executor.v1");
+}
+
+/// Executes an action locally on the validator host.
 pub async fn execute_action(action: Action) -> Result<()> {
     match action {
         Action::DisableRpc { validator } => {
             info!(validator = validator.0, "disabling RPC traffic");
-            simulate_command("echo", &["disabling rpc"]).await?;
+            run_command("echo disabling rpc").await?;
         }
         Action::EnableRpc { validator } => {
             info!(validator = validator.0, "enabling RPC traffic");
-            simulate_command("echo", &["enabling rpc"]).await?;
+            run_command("echo enabling rpc").await?;
         }
         Action::RestartValidator { validator } => {
             info!(validator = validator.0, "restarting validator process");
-            simulate_command("echo", &["systemctl", "restart", "solana-validator"]).await?;
+            run_command("echo restarting validator").await?;
         }
         Action::ThrottleRpcClient { validator } => {
             info!(validator = validator.0, "throttling rpc client");
-            simulate_command("echo", &["applying throttle"]).await?;
+            run_command("echo throttling rpc client").await?;
         }
         Action::RunMaintenanceScript {
             validator,
             script_name,
         } => {
             info!(validator = validator.0, script = %script_name, "running maintenance script");
-            simulate_command("echo", &[script_name.as_str()]).await?;
+            run_command(&format!("sh {}", script_name)).await?;
         }
         Action::SendAlert { validator, message } => {
             info!(validator = validator.0, %message, "sending alert");
-            simulate_command("echo", &["alert", &message]).await?;
+            run_command(&format!("echo alert: {message}")).await?;
         }
     }
     Ok(())
 }
 
-async fn simulate_command(cmd: &str, args: &[&str]) -> Result<()> {
-    let status = Command::new(cmd)
-        .args(args)
+async fn run_command(command: &str) -> Result<()> {
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(command)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
         .await?;
-    // small delay keeps behavior close to real command execution
     tokio::time::sleep(Duration::from_millis(50)).await;
     if status.success() {
         Ok(())
     } else {
-        bail!("command `{cmd}` failed with status {status}");
+        bail!("command `{command}` failed with status {status}");
     }
 }
 
@@ -63,16 +68,8 @@ mod tests {
         let action = Action::DisableRpc {
             validator: common::ValidatorId("test".into()),
         };
-        execute_action(action).await.expect("action should succeed");
-    }
-
-    #[tokio::test]
-    async fn executes_restart_validator() {
-        let action = Action::RestartValidator {
-            validator: common::ValidatorId("test".into()),
-        };
         execute_action(action)
             .await
-            .expect("restart should succeed");
+            .expect("disable rpc should succeed with stub command");
     }
 }

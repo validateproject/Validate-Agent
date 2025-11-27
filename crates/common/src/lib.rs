@@ -67,6 +67,7 @@ pub struct ValidatorConfig {
     pub id: ValidatorId,
     pub host: String,
     pub prometheus_url: String,
+    pub auth_token: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
