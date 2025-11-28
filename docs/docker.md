@@ -14,10 +14,8 @@ This repository now ships with a docker-compose workflow that spins up every run
 ## Files
 
 - `Dockerfile` – builds all workspace binaries (`agent`, `metrics_collector`, `executor_daemon`)
-- `docker/entrypoint.sh` – tiny wrapper that execs whichever binary a service wants to run
 - `config.docker.toml` – sample config wired to the Compose network (`redis://redis:6379`)
 - `docker-compose.yml` – defines runtime services, mock validator hosts, the React dashboard, plus a throwaway `tests` runner
-- `docker/validator-mock/server.py` – lightweight HTTP server that mimics a validator's host + `/metrics`
 - `dashboard/` – Vite + React frontend that consumes the agent API (`/api/validators`, `/api/actions`)
 
 ## Quick start

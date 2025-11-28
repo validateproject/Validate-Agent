@@ -1,4 +1,5 @@
 use anyhow::Result;
+use futures_util::stream::StreamExt;
 use common::{Action, ValidatorConfig, ValidatorMetrics};
 use executor::proto::executor_server::{Executor, ExecutorServer};
 use executor::proto::{
@@ -11,7 +12,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::Stream;
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
 

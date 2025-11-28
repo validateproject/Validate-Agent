@@ -3,7 +3,11 @@ WORKDIR /app
 
 # Install build dependencies for crates that need OpenSSL.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates \
+    && apt-get install -y --no-install-recommends \
+        pkg-config \
+        libssl-dev \
+        ca-certificates \
+        protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml Cargo.toml
@@ -31,13 +35,10 @@ COPY --from=builder /app/target/release/agent /usr/local/bin/agent
 COPY --from=builder /app/target/release/metrics_collector /usr/local/bin/metrics_collector
 COPY --from=builder /app/target/release/executor_daemon /usr/local/bin/executor_daemon
 COPY --from=builder /app/target/release/validator_client /usr/local/bin/validator_client
-COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-RUN chmod +x /usr/local/bin/entrypoint.sh \
-    && chown -R "${APP_USER}:${APP_USER}" "${APP_HOME}"
+RUN chown -R "${APP_USER}:${APP_USER}" "${APP_HOME}"
 
 USER ${APP_USER}
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["/usr/local/bin/agent"]
 

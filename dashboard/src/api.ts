@@ -1,21 +1,73 @@
-import type { ActionsResponse, ValidatorsResponse } from "./types";
+import type { PrometheusMetric } from "./types";
 
-const API_BASE =
-  import.meta.env.VITE_AGENT_API?.replace(/\/$/, "") || "http://localhost:3000";
+const DEFAULT_PROM_URL = "http://3.79.61.58:9101/metrics";
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+const PROMETHEUS_URL =
+  import.meta.env.VITE_PROM_METRICS_URL?.trim() || DEFAULT_PROM_URL;
+
+export async function fetchPrometheusMetrics(): Promise<PrometheusMetric[]> {
+  const res = await fetch(PROMETHEUS_URL, {
+    cache: "no-store"
+  });
   if (!res.ok) {
-    throw new Error(`Request failed: ${res.status}`);
+    throw new Error(`Metrics request failed: ${res.status}`);
   }
-  return (await res.json()) as T;
+  const body = await res.text();
+  return parsePrometheusBody(body);
 }
 
-export function fetchValidators() {
-  return fetchJson<ValidatorsResponse>("/api/validators");
+const METRIC_LINE =
+  /^([A-Za-z_:][\w:]*)(\{[^}]*\})?\s+(-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|NaN|Inf|-Inf)$/;
+
+function parsePrometheusBody(body: string): PrometheusMetric[] {
+  const metrics: PrometheusMetric[] = [];
+  const lines = body.split("\n");
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const match = line.match(METRIC_LINE);
+    if (!match) {
+      continue;
+    }
+
+    const [, name, labelGroup, valueToken] = match;
+    metrics.push({
+      name,
+      labels: labelGroup ? parseLabels(labelGroup) : {},
+      value: parseValue(valueToken)
+    });
+  }
+
+  return metrics;
 }
 
-export function fetchActions() {
-  return fetchJson<ActionsResponse>("/api/actions");
+function parseLabels(group: string): Record<string, string> {
+  const labels: Record<string, string> = {};
+  const content = group.slice(1, -1);
+  if (!content) {
+    return labels;
+  }
+
+  const parts = content.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+  for (const part of parts) {
+    const [key, rawValue] = part.split("=");
+    if (!key || rawValue == null) {
+      continue;
+    }
+    const value = rawValue.replace(/^"/, "").replace(/"$/, "");
+    labels[key.trim()] = value.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+  }
+  return labels;
+}
+
+function parseValue(token: string): number {
+  if (token === "NaN") return Number.NaN;
+  if (token === "Inf" || token === "+Inf") return Number.POSITIVE_INFINITY;
+  if (token === "-Inf") return Number.NEGATIVE_INFINITY;
+  return Number(token);
 }
 

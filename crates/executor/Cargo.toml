@@ -15,6 +15,7 @@ tonic.workspace = true
 prost.workspace = true
 tokio-stream.workspace = true
 reqwest.workspace = true
+futures-util.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true
