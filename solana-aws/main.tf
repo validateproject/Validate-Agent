@@ -53,7 +53,7 @@ resource "aws_security_group" "solana_validator_sg" {
   ingress {
     description = "Solana TCP range"
     from_port   = 8000
-    to_port     = 8020
+    to_port     = 8025
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -61,25 +61,17 @@ resource "aws_security_group" "solana_validator_sg" {
   ingress {
     description = "Solana UDP range"
     from_port   = 8000
-    to_port     = 8020
+    to_port     = 8025
     protocol    = "udp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    description = "Solana RPC"
-    from_port   = 8899
-    to_port     = 8899
+    description = "Prometheus metrics"
+    from_port   = 9103
+    to_port     = 9103
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "Prometheus exporter"
-    from_port   = 9101
-    to_port     = 9101
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.prometheus_cidr]
   }
 
   egress {
@@ -95,7 +87,11 @@ resource "aws_security_group" "solana_validator_sg" {
 }
 
 locals {
-  user_data = file("${path.module}/user-data.sh")
+  user_data = replace(
+    file("${path.module}/user-data.sh"),
+    "__AGAVE_VERSION__",
+    var.solana_version,
+  )
 }
 
 resource "aws_instance" "solana_validator" {

@@ -16,9 +16,9 @@ variable "key_name" {
 }
 
 variable "solana_version" {
-  description = "Solana/Agave version to install"
+  description = "Agave release tag to build (match mb-announcements)"
   type        = string
-  default     = "v1.18.26"
+  default     = "v3.0.11"
 }
 
 variable "ledger_disk_size_gb" {
@@ -29,6 +29,12 @@ variable "ledger_disk_size_gb" {
 
 variable "allowed_ssh_cidr" {
   description = "CIDR allowed to SSH into the validator"
+  type        = string
+  default     = "0.0.0.0/0"
+}
+
+variable "prometheus_cidr" {
+  description = "CIDR allowed to scrape Prometheus metrics"
   type        = string
   default     = "0.0.0.0/0"
 }
