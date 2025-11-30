@@ -11,3 +11,8 @@ id = "validator-2"
 host = "validator2.example.com"
 prometheus_url = "http://validator2.example.com:9100/metrics"
 auth_token = "validator-2-secret"
+
+[agentic]
+provider = "openai"
+model = "gpt-4o-mini"
+api_key_env = "OPENAI_API_KEY"

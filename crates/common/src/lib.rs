@@ -74,6 +74,32 @@ pub struct ValidatorConfig {
 pub struct Config {
     pub validators: Vec<ValidatorConfig>,
     pub redis_url: String,
+    #[serde(default)]
+    pub agentic: Option<AgenticConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "provider", rename_all = "snake_case")]
+pub enum AgenticConfig {
+    OpenAi(OpenAiAgentConfig),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OpenAiAgentConfig {
+    #[serde(default = "default_openai_model")]
+    pub model: String,
+    #[serde(default)]
+    pub api_base: Option<String>,
+    #[serde(default)]
+    pub system_prompt: Option<String>,
+    #[serde(default)]
+    pub temperature: Option<f32>,
+    #[serde(default)]
+    pub api_key_env: Option<String>,
+}
+
+fn default_openai_model() -> String {
+    "gpt-4o-mini".to_string()
 }
 
 pub fn load_config() -> Result<Config> {

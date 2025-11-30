@@ -42,7 +42,11 @@ async fn main() -> Result<()> {
                 let key = format!("validator:metrics:{}", update.validator_id);
                 let payload = serde_json::to_string(&metrics)?;
                 if let Err(err) = conn.set::<_, _, ()>(&key, payload).await {
-                    error!(validator = update.validator_id, ?err, "failed to persist metrics");
+                    error!(
+                        validator = update.validator_id,
+                        ?err,
+                        "failed to persist metrics"
+                    );
                 } else {
                     info!(validator = update.validator_id, "metrics synced to redis");
                 }

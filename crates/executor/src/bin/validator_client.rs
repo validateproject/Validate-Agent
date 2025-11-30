@@ -23,7 +23,8 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let server_addr = env::var("EXECUTOR_SERVER_ADDR").unwrap_or_else(|_| DEFAULT_SERVER_ADDR.into());
+    let server_addr =
+        env::var("EXECUTOR_SERVER_ADDR").unwrap_or_else(|_| DEFAULT_SERVER_ADDR.into());
     let validator_id =
         env::var("VALIDATOR_ID").context("VALIDATOR_ID environment variable is required")?;
     let auth_token = env::var("VALIDATOR_AUTH_TOKEN")
@@ -236,4 +237,3 @@ fn labels_match_validator(labels: &str, validator_id: &str) -> bool {
 fn map_status(err: Status) -> anyhow::Error {
     anyhow!("gRPC error: {err}")
 }
-

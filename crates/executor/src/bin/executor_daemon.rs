@@ -1,10 +1,10 @@
 use anyhow::Result;
-use futures_util::stream::StreamExt;
 use common::{Action, ValidatorConfig, ValidatorMetrics};
 use executor::proto::executor_server::{Executor, ExecutorServer};
 use executor::proto::{
     ActionEnvelope, ActionResult, ConnectRequest, MetricsUpdate, MetricsWatchRequest, ReportAck,
 };
+use futures_util::stream::StreamExt;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::env;
 use std::net::SocketAddr;
@@ -18,10 +18,8 @@ use tracing::{error, info};
 
 const DEFAULT_GRPC_ADDR: &str = "0.0.0.0:50051";
 
-type ActionStream =
-    Pin<Box<dyn Stream<Item = Result<ActionEnvelope, Status>> + Send + 'static>>;
-type MetricsStream =
-    Pin<Box<dyn Stream<Item = Result<MetricsUpdate, Status>> + Send + 'static>>;
+type ActionStream = Pin<Box<dyn Stream<Item = Result<ActionEnvelope, Status>> + Send + 'static>>;
+type MetricsStream = Pin<Box<dyn Stream<Item = Result<MetricsUpdate, Status>> + Send + 'static>>;
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -16,3 +16,4 @@ tower-http.workspace = true
 executor = { path = "../executor" }
 tonic.workspace = true
 tokio-stream.workspace = true
+async-openai.workspace = true

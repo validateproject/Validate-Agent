@@ -15,6 +15,21 @@ Validate Agent is a automates validator SRE. It continuously monitors validator 
 
 Redis now only stores the latest validator metrics (`validator:metrics:<id>`), mirrored there by the metrics collector for the dashboard; all action dispatching flows through the gRPC control plane.
 
+## Agentic remediation (optional)
+
+The agent can now call out to OpenAI to synthesize remediation plans dynamically. Enable it by adding an `agentic` block to `config.toml` (or providing the equivalent `VALIDATOR_COPILOT__AGENTIC__*` environment variables) and supplying an API key:
+
+```toml
+[agentic]
+provider = "openai"
+model = "gpt-4o-mini"
+api_key_env = "OPENAI_API_KEY"
+# system_prompt = "optional custom instructions"
+# temperature = 0.2
+```
+
+Export the matching key before starting the agent, e.g. `export OPENAI_API_KEY=sk-...`. When the block is present, the agent will send validator metrics + the detected issue to the model and translate the JSON response into concrete actions. If the provider is not configured or the call fails, the existing rule-based playbooks remain as a safe fallback.
+
 ## Prerequisites
 
 - Docker Engine + Compose v2.20+ (for the full local stack)

@@ -32,3 +32,4 @@ prost = "0.12"
 prost-types = "0.12"
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
+async-openai = "0.23"

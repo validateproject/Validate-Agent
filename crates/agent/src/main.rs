@@ -1,8 +1,9 @@
+mod agentic;
+
+use agentic::{AgenticBrain, AgenticDecision};
 use anyhow::{Context, Result};
 use axum::{extract::State, routing::get, Json, Router};
-use common::{
-    risk_score, Action, Config, IssueKind, Playbook, ValidatorConfig, ValidatorId, ValidatorMetrics,
-};
+use common::{risk_score, Action, Config, IssueKind, Playbook, ValidatorId, ValidatorMetrics};
 use executor::proto::executor_client::ExecutorClient;
 use executor::proto::{ActionEnvelope, MetricsWatchRequest};
 use serde::Serialize;
@@ -38,6 +39,12 @@ async fn main() -> Result<()> {
     let action_client = ExecutorClient::new(channel);
 
     let metrics_cache = MetricsCache::default();
+    let agentic_brain = Arc::new(AgenticBrain::new(cfg.agentic.clone())?);
+    if agentic_brain.is_enabled() {
+        info!("agentic planning enabled via OpenAI provider");
+    } else {
+        info!("agentic planning disabled (no provider configured)");
+    }
 
     let metrics_task_cache = metrics_cache.clone();
     tokio::spawn(async move {
@@ -45,8 +52,11 @@ async fn main() -> Result<()> {
     });
     let agent_cfg = cfg.clone();
     let agent_metrics_cache = metrics_cache.clone();
+    let planner = agentic_brain.clone();
     tokio::spawn(async move {
-        if let Err(err) = run_agent_loop(action_client, agent_cfg, agent_metrics_cache).await {
+        if let Err(err) =
+            run_agent_loop(action_client, agent_cfg, agent_metrics_cache, planner).await
+        {
             error!(?err, "agent loop terminated");
         }
     });
@@ -83,7 +93,7 @@ async fn subscribe_metrics_loop(
         include_snapshot: true,
     });
     match client.subscribe_metrics(request).await {
-        Ok(mut stream) => {
+        Ok(stream) => {
             let mut inner = stream.into_inner();
             while let Ok(Some(update)) = inner.message().await {
                 match serde_json::from_str::<ValidatorMetrics>(&update.metrics_json) {
@@ -91,7 +101,11 @@ async fn subscribe_metrics_loop(
                         cache.insert(update.validator_id.clone(), metrics).await;
                     }
                     Err(err) => {
-                        error!(validator = update.validator_id, ?err, "invalid metrics payload");
+                        error!(
+                            validator = update.validator_id,
+                            ?err,
+                            "invalid metrics payload"
+                        );
                     }
                 }
             }
@@ -106,9 +120,13 @@ async fn run_agent_loop(
     mut client: ExecutorClient<tonic::transport::Channel>,
     config: Arc<Config>,
     metrics: MetricsCache,
+    brain: Arc<AgenticBrain>,
 ) -> Result<()> {
     let mut ticker = interval(Duration::from_secs(ACTION_POLL_INTERVAL_SECS));
-    info!("agent loop started for {} validators", config.validators.len());
+    info!(
+        "agent loop started for {} validators",
+        config.validators.len()
+    );
     loop {
         ticker.tick().await;
         let snapshot = metrics.snapshot().await;
@@ -117,11 +135,31 @@ async fn run_agent_loop(
                 continue;
             };
             if let Some(issue) = detect_issue(metrics) {
-                let playbook = choose_playbook(issue, &validator.id);
+                let agentic_plan = match brain.plan(validator, metrics, issue).await {
+                    Ok(plan) => plan,
+                    Err(err) => {
+                        error!(
+                            validator = validator.id.0,
+                            ?err,
+                            "agentic planning failed, falling back to rule-based playbook"
+                        );
+                        None
+                    }
+                };
+                let (playbook, rationale, plan_source) = match agentic_plan {
+                    Some(AgenticDecision {
+                        playbook,
+                        rationale,
+                        ..
+                    }) => (playbook, rationale, "agentic"),
+                    None => (choose_playbook(issue, &validator.id), None, "rule_based"),
+                };
                 info!(
                     validator = validator.id.0,
                     issue = ?issue,
                     playbook = %playbook.id,
+                    plan_source,
+                    rationale = rationale.as_deref(),
                     "issue detected, dispatching actions via executor"
                 );
                 for action in playbook.steps {
